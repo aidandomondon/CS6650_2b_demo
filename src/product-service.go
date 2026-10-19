@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	gin "github.com/gin-gonic/gin"
 
 	http "net/http"
@@ -8,7 +10,84 @@ import (
 	strconv "strconv"
 
 	sync "sync"
+
+	"time"
+
+	prometheus "github.com/prometheus/client_golang/prometheus"
+	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+var (
+	httpRequests = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_requests_total",
+			Help: "Total number of HTTP requests.",
+		},
+		[]string{"method", "route", "status"},
+	)
+
+	httpErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_errors_total",
+			Help: "Total number of HTTP requests returning 4xx or 5xx.",
+		},
+		[]string{"method", "route", "status"},
+	)
+
+	httpDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_request_duration_seconds",
+			Help:    "HTTP request duration in seconds.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "route"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(
+		httpRequests,
+		httpErrors,
+		httpDuration,
+	)
+}
+
+func prometheusMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Don't count Prometheus scraping its own endpoint.
+		if c.Request.URL.Path == "/metrics" {
+			c.Next()
+			return
+		}
+
+		start := time.Now()
+		c.Next()
+
+		duration := time.Since(start).Seconds()
+		method := c.Request.Method
+		route := c.FullPath()
+		status := strconv.Itoa(c.Writer.Status())
+
+		// Avoid unbounded label cardinality for unmatched routes.
+		if route == "" {
+			route = "unmatched"
+		}
+
+		httpRequests.WithLabelValues(
+			method, route, status,
+		).Inc()
+
+		if c.Writer.Status() >= 400 {
+			httpErrors.WithLabelValues(
+				method, route, status,
+			).Inc()
+		}
+
+		httpDuration.WithLabelValues(
+			method, route,
+		).Observe(duration)
+	}
+}
 
 type Products struct {
 	mu       sync.RWMutex
@@ -38,6 +117,7 @@ var products Products = Products{
 
 // handle calls to retrieve an album by its ID
 func handleGetProductByID(c *gin.Context) {
+	start := time.Now()
 	// Validate ID argument
 	// TODO: abstract ID validation out from handleGetProductByID and handlePostProductByID
 	id64, err := strconv.ParseInt((*c).Param("id"), 10, 32)
@@ -49,6 +129,12 @@ func handleGetProductByID(c *gin.Context) {
 			Details: "Not an integer.",
 		}
 		(*c).JSON(http.StatusInternalServerError, error)
+		duration := time.Since(start)
+		fmt.Printf(
+			"LOG | {\"endpoint\": \"/products/:id\", \"statusCode\": \"%d\",  duration: \"%d\"}",
+			http.StatusInternalServerError,
+			duration.Milliseconds(),
+		)
 		return
 	}
 	if id < 1 {
@@ -58,6 +144,12 @@ func handleGetProductByID(c *gin.Context) {
 			Details: "Less than 1.",
 		}
 		(*c).JSON(http.StatusInternalServerError, error)
+		duration := time.Since(start)
+		fmt.Printf(
+			"LOG | {\"endpoint\": \"/products/:id\", \"statusCode\": \"%d\",  duration: \"%d\"}",
+			http.StatusInternalServerError,
+			duration.Milliseconds(),
+		)
 		return
 	}
 
@@ -70,12 +162,25 @@ func handleGetProductByID(c *gin.Context) {
 			Message: "There is no product in the database with the given ID.",
 		}
 		(*c).JSON(http.StatusNotFound, error)
+		duration := time.Since(start)
+		fmt.Printf(
+			"LOG | {\"endpoint\": \"/products/:id\", \"statusCode\": \"%d\",  duration: \"%d\"}",
+			http.StatusNotFound,
+			duration.Milliseconds(),
+		)
 		return
 	}
 	(*c).JSON(http.StatusOK, product)
+	duration := time.Since(start)
+	fmt.Printf(
+		"LOG | {\"endpoint\": \"/products/:id\", \"statusCode\": \"%d\",  duration: \"%d\"}",
+		http.StatusOK,
+		duration.Milliseconds(),
+	)
 }
 
 func handlePostProductByID(c *gin.Context) {
+	start := time.Now()
 	// Validate ID argument
 	id64, err := strconv.ParseInt((*c).Param("id"), 10, 32)
 	id := int32(id64)
@@ -86,6 +191,12 @@ func handlePostProductByID(c *gin.Context) {
 			Details: "Not an integer.",
 		}
 		(*c).JSON(http.StatusInternalServerError, error)
+		duration := time.Since(start)
+		fmt.Printf(
+			"LOG | {\"endpoint\": \"/products/:id\", \"statusCode\": \"%d\",  duration: \"%d\"}",
+			http.StatusInternalServerError,
+			duration.Milliseconds(),
+		)
 		return
 	}
 	if id < 1 {
@@ -95,6 +206,12 @@ func handlePostProductByID(c *gin.Context) {
 			Details: "Less than 1.",
 		}
 		(*c).JSON(http.StatusInternalServerError, error)
+		duration := time.Since(start)
+		fmt.Printf(
+			"LOG | {\"endpoint\": \"/products/:id\", \"statusCode\": \"%d\",  duration: \"%d\"}",
+			http.StatusInternalServerError,
+			duration.Milliseconds(),
+		)
 		return
 	}
 	// Set product
@@ -103,16 +220,30 @@ func handlePostProductByID(c *gin.Context) {
 	if err := c.ShouldBindJSON(&product); err != nil {
 		(*c).JSON(http.StatusBadRequest,
 			Error{Error: "INVALID_PRODUCT_DETAILS", Message: err.Error()})
+		duration := time.Since(start)
+		fmt.Printf(
+			"LOG | {\"endpoint\": \"/products/:id\", \"statusCode\": \"%d\",  duration: \"%d\"}",
+			http.StatusBadRequest,
+			duration.Milliseconds(),
+		)
 		return
 	}
 	products.mu.Lock()
 	products.products[id] = product
 	products.mu.Unlock()
-	c.Status(http.StatusNoContent)
+	(*c).Status(http.StatusNoContent)
+	duration := time.Since(start)
+	fmt.Printf(
+		"LOG | {\"endpoint\": \"/products/:id\", \"statusCode\": \"%d\",  duration: \"%d\"}",
+		http.StatusNoContent,
+		duration.Milliseconds(),
+	)
 }
 
 func main() {
 	server := gin.Default()
+	server.Use(prometheusMiddleware())
+	server.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	server.GET("/products/:id", handleGetProductByID)
 	server.POST("/products/:id/details", handlePostProductByID)
 	// Must run on all interfaces since the container is isolated inside.
