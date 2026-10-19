@@ -1,3 +1,9 @@
+# Docker host
+variable "docker_host" {
+  type    = string
+  default = "unix:///var/run/docker.sock"
+}
+
 # Region to deploy into
 variable "aws_region" {
   type    = string

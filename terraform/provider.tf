@@ -22,6 +22,7 @@ data "aws_ecr_authorization_token" "registry" {}
 
 # Configure Docker provider to authenticate against ECR automatically
 provider "docker" {
+  host = var.docker_host
   registry_auth {
     address  = data.aws_ecr_authorization_token.registry.proxy_endpoint
     username = data.aws_ecr_authorization_token.registry.user_name

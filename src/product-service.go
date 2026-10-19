@@ -6,11 +6,34 @@ import (
 	http "net/http"
 
 	strconv "strconv"
+
+	sync "sync"
 )
 
-var products map[int32]Product = map[int32]Product{
-	12345: {ProductID: 12345, SKU: "ABC-123-XYZ", Manufacturer: "Boeing", CategoryID: 456, Weight: 41_412_983, SomeOtherID: 789},
-	12346: {ProductID: 12346, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+type Products struct {
+	mu       sync.RWMutex
+	products map[int32]Product
+}
+
+var products Products = Products{
+	mu: sync.RWMutex{},
+	products: map[int32]Product{
+		12345: Product{ProductID: 12345, SKU: "ABC-123-XYZ", Manufacturer: "Boeing", CategoryID: 456, Weight: 41_412_983, SomeOtherID: 789},
+		12346: Product{ProductID: 12346, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12347: Product{ProductID: 12347, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12348: Product{ProductID: 12348, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12349: Product{ProductID: 12349, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12350: Product{ProductID: 12350, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12351: Product{ProductID: 12351, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12352: Product{ProductID: 12352, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12353: Product{ProductID: 12353, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12354: Product{ProductID: 12354, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12355: Product{ProductID: 12355, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12356: Product{ProductID: 12356, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12357: Product{ProductID: 12357, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12358: Product{ProductID: 12358, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+		12359: Product{ProductID: 12359, SKU: "DEF-123-XYZ", Manufacturer: "Airbus", CategoryID: 456, Weight: 37_239_934, SomeOtherID: 790},
+	},
 }
 
 // handle calls to retrieve an album by its ID
@@ -38,7 +61,9 @@ func handleGetProductByID(c *gin.Context) {
 		return
 	}
 
-	product, exists := products[id]
+	products.mu.RLock()
+	product, exists := products.products[id]
+	products.mu.RUnlock()
 	if !exists {
 		error := Error{
 			Error:   "PRODUCT_NOT_FOUND",
@@ -80,7 +105,9 @@ func handlePostProductByID(c *gin.Context) {
 			Error{Error: "INVALID_PRODUCT_DETAILS", Message: err.Error()})
 		return
 	}
-	products[id] = product
+	products.mu.Lock()
+	products.products[id] = product
+	products.mu.Unlock()
 	c.Status(http.StatusNoContent)
 }
 
